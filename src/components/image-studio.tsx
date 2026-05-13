@@ -90,6 +90,12 @@ const ACCEPTED_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/w
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1"
 const GITHUB_REPOSITORY_URL = "https://github.com/imgx-studio/gpt-image-2-webui"
 const CONNECTION_PREFERENCES_KEY = "imgx.connectionPreferences"
+
+function createUploadId(file: File) {
+  const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+
+  return `${file.name}-${file.lastModified}-${randomId}`
+}
 const LEGACY_API_KEY_KEY = "imgx.apiKey"
 const LEGACY_REMEMBER_KEY_KEY = "imgx.rememberKey"
 const LEGACY_ENDPOINT_KEY = "imgx.endpoint"
@@ -887,7 +893,7 @@ async function createGeneratedUploadPreview({
 
   return {
     file,
-    id: `${file.name}-${Date.now()}-${crypto.randomUUID()}`,
+    id: createUploadId(file),
     url: URL.createObjectURL(file),
   }
 }
@@ -1218,7 +1224,7 @@ export function ImageStudio({ initialLocale = DEFAULT_LOCALE }: { initialLocale?
 
       accepted.push({
         file,
-        id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
+        id: createUploadId(file),
         url: URL.createObjectURL(file),
       })
     }
