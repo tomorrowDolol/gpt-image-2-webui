@@ -16,31 +16,11 @@ export const maxDuration = 120
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const MIN_CUSTOM_DIMENSION = 64
 const MAX_CUSTOM_DIMENSION = 8192
-const GENERATE_SIZE_VALUES = new Set([
+const GPT_IMAGE_SIZE_VALUES = new Set([
   "auto",
-  "256x256",
-  "512x512",
   "1024x1024",
   "1536x1024",
   "1024x1536",
-  "1792x1024",
-  "1024x1792",
-  "2048x2048",
-  "2048x1152",
-  "3840x2160",
-  "2160x3840",
-])
-const EDIT_SIZE_VALUES = new Set([
-  "auto",
-  "256x256",
-  "512x512",
-  "1024x1024",
-  "1536x1024",
-  "1024x1536",
-  "2048x2048",
-  "2048x1152",
-  "3840x2160",
-  "2160x3840",
 ])
 const SUPPORTED_IMAGE_TYPES = new Set([
   "image/jpeg",
@@ -95,15 +75,29 @@ function normalizeCustomSize(value: string) {
   return `${width}x${height}`
 }
 
-function getSize(formData: FormData, supportedSizes: Set<string>) {
-  const value = getText(formData, "size", "1024x1024")
-  const normalizedCustomSize = normalizeCustomSize(value)
-
-  if (supportedSizes.has(value)) {
-    return value
+function mapToNearestSupportedSize(size: string) {
+  if (GPT_IMAGE_SIZE_VALUES.has(size)) {
+    return size
   }
 
-  return normalizedCustomSize || "1024x1024"
+  const normalizedCustomSize = normalizeCustomSize(size)
+
+  if (!normalizedCustomSize) {
+    return "1024x1024"
+  }
+
+  const [width, height] = normalizedCustomSize.split("x").map(Number)
+  const ratio = width / height
+
+  if (ratio >= 0.75 && ratio <= 1.33) {
+    return "1024x1024"
+  }
+
+  return ratio > 1.33 ? "1536x1024" : "1024x1536"
+}
+
+function getSize(formData: FormData) {
+  return mapToNearestSupportedSize(getText(formData, "size", "1024x1024"))
 }
 
 function getEditQuality(formData: FormData) {
@@ -114,11 +108,11 @@ function getEditQuality(formData: FormData) {
 }
 
 function getGenerateSize(formData: FormData) {
-  return getSize(formData, GENERATE_SIZE_VALUES)
+  return getSize(formData)
 }
 
 function getEditSize(formData: FormData) {
-  return getSize(formData, EDIT_SIZE_VALUES)
+  return getSize(formData)
 }
 
 export async function POST(request: Request) {

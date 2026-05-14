@@ -112,11 +112,9 @@ const PRESET_SIZE_VALUES = [
   "1024x1024",
   "1536x1024",
   "1024x1536",
-  "2048x2048",
-  "2048x1152",
-  "3840x2160",
-  "2160x3840",
 ] as const
+
+const SUPPORTED_GPT_SIZES = ["auto", "1024x1024", "1536x1024", "1024x1536"] as const
 
 type RemixRecipeId = "variations" | "retouch" | "upscale" | "inpaint"
 
@@ -766,6 +764,23 @@ function normalizeCustomSize(value: string) {
   return `${width}x${height}`
 }
 
+
+function mapToNearestSupportedSize(size: string): string {
+  if (size === "auto" || (SUPPORTED_GPT_SIZES as readonly string[]).includes(size)) {
+    return size
+  }
+
+  const dims = getSizeDimensions(size)
+  if (!dims) return "1024x1024"
+
+  const { width, height } = dims
+  const ratio = width / height
+
+  if (ratio >= 0.75 && ratio <= 1.33) return "1024x1024"
+  if (ratio > 1.33) return "1536x1024"
+  return "1024x1536"
+}
+
 function getWorkflowCopy(locale: Locale) {
   return workflowCopies[locale]
 }
@@ -888,10 +903,6 @@ function getSizeOptions(locale: Locale) {
     { value: "1024x1024" as const, label: `1024 x 1024 · ${t(locale, "aspectSquare")}` },
     { value: "1536x1024" as const, label: `1536 x 1024 · ${t(locale, "aspectLandscape")} 3:2` },
     { value: "1024x1536" as const, label: `1024 x 1536 · ${t(locale, "aspectPortrait")} 2:3` },
-    { value: "2048x2048" as const, label: `2048 x 2048 · 2K ${t(locale, "aspectSquare")}` },
-    { value: "2048x1152" as const, label: `2048 x 1152 · 2K ${t(locale, "aspectLandscape")}` },
-    { value: "3840x2160" as const, label: `3840 x 2160 · 4K ${t(locale, "aspectLandscape")}` },
-    { value: "2160x3840" as const, label: `2160 x 3840 · 4K ${t(locale, "aspectPortrait")}` },
     { value: CUSTOM_SIZE_OPTION_VALUE, label: `${t(locale, "aspectCustom")} · ${DEFAULT_CUSTOM_SIZE}` },
   ]
 }
@@ -914,14 +925,6 @@ function getSizePreviewClass(size: string) {
 
   if (size === "1536x1024") {
     return "aspect-[3/2]"
-  }
-
-  if (size === "2048x1152" || size === "3840x2160") {
-    return "aspect-video"
-  }
-
-  if (size === "2160x3840") {
-    return "aspect-[9/16]"
   }
 
   return "aspect-square"
@@ -1114,7 +1117,8 @@ export function ImageStudio({ initialLocale = DEFAULT_LOCALE }: { initialLocale?
   const sizeOptions = useMemo(() => getSizeOptions(locale), [locale])
   const customSizeValue = useMemo(() => normalizeCustomSize(customSize), [customSize])
   const isCustomSize = sizeMode === CUSTOM_SIZE_OPTION_VALUE
-  const size: SizeValue = isCustomSize ? customSizeValue || customSize.trim() : sizeMode
+  const rawSize: SizeValue = isCustomSize ? customSizeValue || customSize.trim() : sizeMode
+  const size: SizeValue = isCustomSize ? mapToNearestSupportedSize(rawSize) : rawSize
   const qualityItems = useMemo(() => getQualityItems(locale), [locale])
   const formatItems = useMemo(() => getFormatItems(), [])
   const backgroundItems = useMemo(() => getBackgroundItems(locale), [locale])
