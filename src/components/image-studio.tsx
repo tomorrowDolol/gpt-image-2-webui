@@ -21,6 +21,7 @@ import {
   PlayIcon,
   RefreshCwIcon,
   ScissorsIcon,
+  Settings2Icon,
   SparklesIcon,
   WandSparklesIcon,
   XIcon,
@@ -89,6 +90,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024
 const ACCEPTED_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"])
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1"
 const CONNECTION_PREFERENCES_KEY = "imgx.connectionPreferences"
+const CUSTOM_PRESETS_KEY = "imgx.customPromptPresets"
 
 function createUploadId(file: File) {
   const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
@@ -1071,6 +1073,21 @@ export function ImageStudio({ initialLocale = DEFAULT_LOCALE }: { initialLocale?
   const [hasLoadedPreferences, setHasLoadedPreferences] = useState(false)
   const [customPrompt, setCustomPrompt] = useState<string | null>(null)
   const [selectedPromptPresetIndex, setSelectedPromptPresetIndex] = useState(0)
+  const [isEditingPresets, setIsEditingPresets] = useState(false)
+  const [customPresets, setCustomPresets] = useState<string[] | null>(() => {
+    if (typeof window === "undefined") return null
+    try {
+      const raw = localStorage.getItem(CUSTOM_PRESETS_KEY)
+      if (!raw) return null
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length === 3 && parsed.every((p) => typeof p === "string" && p.trim())) {
+        return parsed
+      }
+    } catch {
+      localStorage.removeItem(CUSTOM_PRESETS_KEY)
+    }
+    return null
+  })
   const [endpoint, setEndpoint] = useState(DEFAULT_ENDPOINT)
   const [model, setModel] = useState("gpt-image-2")
   const [uploads, setUploads] = useState<UploadPreview[]>([])
@@ -1092,7 +1109,7 @@ export function ImageStudio({ initialLocale = DEFAULT_LOCALE }: { initialLocale?
   const workflow = getWorkflowCopy(locale)
   const isCjk = isCjkLocale(locale)
   const selectedLocale = LOCALE_OPTIONS.find((item) => item.value === locale) || LOCALE_OPTIONS[0]
-  const promptPresets = useMemo(() => studioPromptPresets[locale], [locale])
+  const promptPresets = useMemo(() => customPresets ?? studioPromptPresets[locale], [locale, customPresets])
   const prompt = customPrompt ?? promptPresets[selectedPromptPresetIndex] ?? promptPresets[0]
   const sizeOptions = useMemo(() => getSizeOptions(locale), [locale])
   const customSizeValue = useMemo(() => normalizeCustomSize(customSize), [customSize])
@@ -1637,7 +1654,7 @@ export function ImageStudio({ initialLocale = DEFAULT_LOCALE }: { initialLocale?
                     onChange={(event) => updatePrompt(event.target.value)}
                   />
                 </Field>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {promptPresets.map((preset, index) => (
                     <button
                       key={preset}
@@ -1652,7 +1669,66 @@ export function ImageStudio({ initialLocale = DEFAULT_LOCALE }: { initialLocale?
                       {t(locale, "presetLabel", { index: index + 1 })}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingPresets(!isEditingPresets)}
+                    title={isEditingPresets ? "Done editing" : "Edit presets"}
+                    className={"inline-flex min-h-9 items-center rounded-md border px-2 py-1.5 text-xs shadow-sm transition-colors " + (isEditingPresets ? "border-primary bg-primary/10 text-primary" : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground")}
+                  >
+                    <Settings2Icon className="size-3.5" />
+                  </button>
                 </div>
+                {isEditingPresets && (
+                  <div className="mt-2 space-y-2 rounded-md border bg-muted/20 p-3">
+                    {promptPresets.map((preset, index) => (
+                      <div key={index}>
+                        <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                          {t(locale, "presetLabel", { index: index + 1 })}
+                        </label>
+                        <Textarea
+                          className="min-h-[60px] resize-y rounded border bg-background p-2 text-xs leading-relaxed"
+                          value={preset}
+                          onChange={(e) => {
+                            const next = [...promptPresets]
+                            next[index] = e.target.value
+                            setCustomPresets(next)
+                          }}
+                        />
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.setItem(CUSTOM_PRESETS_KEY, JSON.stringify(customPresets ?? promptPresets))
+                          setIsEditingPresets(false)
+                          toast.success("Presets saved")
+                        }}
+                        className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomPresets(null)
+                          setIsEditingPresets(false)
+                          localStorage.removeItem(CUSTOM_PRESETS_KEY)
+                        }}
+                        className="inline-flex h-7 items-center rounded-md border bg-muted/40 px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        Restore Defaults
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingPresets(false)}
+                        className="inline-flex h-7 items-center rounded-md border bg-muted/40 px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </FieldGroup>
             </Section>
 
