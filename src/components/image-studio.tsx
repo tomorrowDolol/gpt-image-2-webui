@@ -1103,6 +1103,7 @@ export function ImageStudio({ initialLocale = DEFAULT_LOCALE }: { initialLocale?
   const [progress, setProgress] = useState(0)
   const [result, setResult] = useState<StudioResponse | null>(null)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [activeSource, setActiveSource] = useState<ActiveSource | null>(null)
   const locale = localeOverride ?? browserLocale
   const text = studioMessages[locale]
@@ -1203,6 +1204,15 @@ export function ImageStudio({ initialLocale = DEFAULT_LOCALE }: { initialLocale?
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (!previewImage) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setPreviewImage(null)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [previewImage])
 
   const updatePrompt = useCallback((next: string | ((current: string) => string)) => {
     setCustomPrompt((current) => (typeof next === "function" ? next(current ?? prompt) : next))
@@ -2115,7 +2125,7 @@ export function ImageStudio({ initialLocale = DEFAULT_LOCALE }: { initialLocale?
                             aria-label={`${workflow.selectImage} ${index + 1}`}
                             aria-pressed={isSelected}
                             onClick={() => setSelectedImageIndex(index)}
-                            className="relative cursor-pointer bg-background text-left outline-none focus-visible:ring-4 focus-visible:ring-ring/40"
+                            className="group relative cursor-pointer bg-background text-left outline-none focus-visible:ring-4 focus-visible:ring-ring/40"
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
@@ -2127,6 +2137,17 @@ export function ImageStudio({ initialLocale = DEFAULT_LOCALE }: { initialLocale?
                               style={getSizePreviewStyle(result.size)}
                               src={image.src}
                             />
+                            <button
+                              type="button"
+                              aria-label="Preview"
+                              className="absolute bottom-2.5 right-2.5 z-20 flex size-8 cursor-pointer items-center justify-center rounded-full bg-black/50 text-white opacity-0 shadow-lg backdrop-blur-sm transition-all duration-200 hover:bg-black/70 hover:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-white/40"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setPreviewImage(image.src)
+                              }}
+                            >
+                              <Maximize2Icon className="size-4" />
+                            </button>
                             <div className="absolute left-3 top-3 rounded-md bg-background/80 px-2.5 py-1 text-xs font-semibold text-foreground shadow-sm backdrop-blur">
                               {String(index + 1).padStart(2, "0")}
                             </div>
@@ -2258,6 +2279,35 @@ export function ImageStudio({ initialLocale = DEFAULT_LOCALE }: { initialLocale?
           )}
         </main>
       </div>
+
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={() => setPreviewImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image preview"
+        >
+          <button
+            type="button"
+            aria-label="Close preview"
+            className="absolute right-4 top-4 z-10 flex size-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+            onClick={(e) => {
+              e.stopPropagation()
+              setPreviewImage(null)
+            }}
+          >
+            <XIcon className="size-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            alt="Preview"
+            className="max-h-[90vh] max-w-[95vw] object-contain"
+            src={previewImage}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   )
 }
