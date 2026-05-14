@@ -1365,18 +1365,15 @@ export function ImageStudio({ initialLocale = DEFAULT_LOCALE }: { initialLocale?
         return nextSource
       })
       setUploads((current) => {
-        const nextLimit = getReferenceUploadLimit(nextSource)
-        const { overflow, visible } = splitUploadsByLimit(current, nextLimit)
-
-        for (const extraUpload of overflow) {
-          URL.revokeObjectURL(extraUpload.url)
+        for (const currentUpload of current) {
+          URL.revokeObjectURL(currentUpload.url)
         }
 
-        if (overflow.length) {
-          toast.warning(t(locale, "maxUploadsWarning", { count: nextLimit }))
+        if (current.length) {
+          return []
         }
 
-        return visible
+        return current
       })
       setSelectedImageIndex(index)
 
