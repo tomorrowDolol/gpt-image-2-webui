@@ -1,4 +1,5 @@
 import OpenAI from "openai"
+import { fetch as undiciFetch, ProxyAgent } from "undici"
 import { NextResponse } from "next/server"
 
 import { resolveLocale, t } from "@/lib/i18n"
@@ -32,6 +33,15 @@ const SUPPORTED_IMAGE_TYPES = new Set([
   "image/png",
   "image/webp",
 ])
+const OPENAI_PROXY_URL = process.env.OPENAI_PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || ""
+const openAIProxyDispatcher = OPENAI_PROXY_URL ? new ProxyAgent(OPENAI_PROXY_URL) : undefined
+const openAIProxyFetch: typeof fetch | undefined = openAIProxyDispatcher
+  ? ((url: unknown, init?: unknown) =>
+      undiciFetch(url as Parameters<typeof undiciFetch>[0], {
+        ...(init as Record<string, unknown> | undefined),
+        dispatcher: openAIProxyDispatcher,
+      })) as unknown as typeof fetch
+  : undefined
 
 function getText(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key)
@@ -119,6 +129,68 @@ function getEditSize(formData: FormData) {
   return getSize(formData)
 }
 
+async function performImageEdit(
+  editUrl: string,
+  apiKey: string,
+  prompt: string,
+  model: string,
+  n: number,
+  outputFormat: string,
+  background: string,
+  quality: string,
+  size: string,
+  images: File[]
+): Promise<unknown> {
+  const { FormData: UndiciFormData } = await import("undici")
+  const form = new UndiciFormData()
+  form.append("model", model)
+  form.append("prompt", prompt)
+  form.append("n", String(n))
+  form.append("output_format", outputFormat)
+  form.append("background", background)
+  form.append("quality", quality)
+  form.append("size", size)
+
+  for (const image of images) {
+    const buffer = Buffer.from(await image.arrayBuffer())
+    form.append("image", new Blob([buffer], { type: image.type }), image.name || "image.png")
+  }
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+  }
+  const rawForm = form as unknown as { headers: Record<string, string> | Headers }
+  if (rawForm.headers instanceof Headers) {
+    Object.assign(headers, Object.fromEntries(rawForm.headers.entries()))
+  } else if (typeof rawForm.headers === "object" && rawForm.headers !== null) {
+    Object.assign(headers, rawForm.headers as Record<string, string>)
+  }
+
+  const response = await undiciFetch(editUrl, {
+    method: "POST",
+    headers,
+    body: form as unknown as BodyInit,
+    dispatcher: openAIProxyDispatcher,
+  } as Parameters<typeof undiciFetch>[1])
+
+  if (!response.ok) {
+    let errorBody: Record<string, unknown> = {}
+    try {
+      errorBody = (await response.json()) as Record<string, unknown>
+    } catch {
+      // ignore parse failure
+    }
+    const status = response.status
+    const message = getImageApiError(errorBody) || `Request failed with status ${status}`
+    const err = new Error(message) as Error & { status: number; errorBody: Record<string, unknown> }
+    err.status = status
+    err.errorBody = errorBody
+    throw err
+  }
+
+  return response.json() as Promise<unknown>
+}
+
 export async function POST(request: Request) {
   let locale = resolveLocale(request.headers.get("accept-language"))
   let endpoint = ""
@@ -171,32 +243,36 @@ export async function POST(request: Request) {
     const imageCount = Number(getText(incomingFormData, "imageCount", "1"))
     const background = getBackground(incomingFormData)
     const n = Math.min(Math.max(imageCount, 1), 4)
-    const client = new OpenAI({
-      apiKey,
-      baseURL,
-      maxRetries: 0,
-    })
     let payload: unknown
     let requestQuality = "auto"
     let requestSize = "1024x1024"
 
-    if (images.length) {
+    if (images.length > 0) {
       const quality = getEditQuality(incomingFormData)
       const size = getEditSize(incomingFormData)
 
       requestQuality = quality
       requestSize = size
-      payload = await client.images.edit({
-        background,
-        image: images.length === 1 ? images[0] : images,
+
+      payload = await performImageEdit(
+        endpoint,
+        apiKey,
+        prompt,
         model,
         n,
-        output_format: outputFormat,
-        prompt,
+        outputFormat,
+        background,
         quality,
-        size: size as OpenAI.Images.ImageEditParams["size"],
-      })
+        size,
+        images
+      )
     } else {
+      const client = new OpenAI({
+        apiKey,
+        baseURL,
+        maxRetries: 0,
+        fetch: openAIProxyFetch,
+      })
       const quality = getGenerateQuality(incomingFormData)
       const size = getGenerateSize(incomingFormData)
 
@@ -244,6 +320,18 @@ export async function POST(request: Request) {
           error: getImageApiError(error.error) || error.message || t(locale, "proxyRequestFailed", { status: error.status || 500 }),
         },
         { status: error.status || 500 }
+      )
+    }
+
+    const errStatus = (error as Error & { status?: number }).status
+    if (typeof errStatus === "number" && errStatus >= 400 && errStatus < 600) {
+      const errBody = (error as Error & { errorBody?: Record<string, unknown> }).errorBody
+      return NextResponse.json(
+        {
+          endpoint,
+          error: getImageApiError(errBody) || (error instanceof Error ? error.message : t(locale, "proxyRequestFailed", { status: errStatus })),
+        },
+        { status: errStatus }
       )
     }
 
